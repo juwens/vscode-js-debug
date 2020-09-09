@@ -140,12 +140,13 @@ describe('variables', () => {
       });
     });
 
-    itIntegrates.only('customDebuggerProperties', async ({ r }) => {
-      const p = await r.launchAndLoad('blank', {
-        customPropertiesGenerator:
-          'function () { if (this.customDebuggerProperties) return this.customDebuggerProperties(); else return this; }',
-      });
-      await p.logger.evaluateAndLog(`
+    describe.only('customDebuggerProperties', () => {
+      itIntegrates('works with customDebuggerProperties method ', async ({ r }) => {
+        const p = await r.launchAndLoad('blank', {
+          customPropertiesGenerator:
+            'function () { if (this.customDebuggerProperties) return this.customDebuggerProperties(); else return this; }',
+        });
+        await p.logger.evaluateAndLog(`
         class Foo { get getter() {} }
         class Bar extends Foo {
           constructor() {
@@ -159,6 +160,29 @@ describe('variables', () => {
           }
         }
         new Bar();`);
+        p.assertLog();
+      });
+    });
+
+    itIntegrates('shows errors while generating properties', async ({ r }) => {
+      const p = await r.launchAndLoad('blank', {
+        customPropertiesGenerator:
+          'function () { if (this.customDebuggerProperties) throw new Error("Some error while generating properties"); else return this; }',
+      });
+      await p.logger.evaluateAndLog(`
+      class Foo { get getter() {} }
+      class Bar extends Foo {
+        constructor() {
+          super();
+          this.realProp = 'cc3';
+        }
+
+        customDebuggerProperties() {
+          const properties = Object.create(this.__proto__);
+          return Object.assign(properties, this, { customProp1: 'aa1', customProp2: 'bb2' });
+        }
+      }
+      new Bar();`);
       p.assertLog();
     });
   });

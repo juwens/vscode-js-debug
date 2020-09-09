@@ -1,9 +1,8 @@
 "use strict";
 function customDebuggerDescription(obj, defaultValue) {
-    if (obj.constructor.prototype === obj) {
+    if (obj.constructor && obj.constructor.prototype === obj) {
         // object is a prototype
         if (obj.constructor.name) {
-            throw new Error('awefawfwea');
             return `Prototype of ${obj.constructor.name}`;
         }
         else {
@@ -23,6 +22,15 @@ function customDebuggerDescription(obj, defaultValue) {
     }
 }
 global.customDebuggerDescription = customDebuggerDescription;
+function customDebuggerProperties(obj) {
+    if (obj && obj.customDebuggerProperties && obj.customDebuggerProperties instanceof Function) {
+        return obj.customDebuggerProperties();
+    }
+    else {
+        return obj;
+    }
+}
+global.customDebuggerProperties = customDebuggerProperties;
 class Fraction {
     constructor(numerator, denominator) {
         this.numerator = numerator;
@@ -30,6 +38,15 @@ class Fraction {
     }
     customDescription() {
         return `${this.numerator}/${this.denominator}`;
+    }
+    floatValue() {
+        return this.numerator / this.denominator;
+    }
+    customDebuggerProperties() {
+        throw new Error("Some error");
+        const properties = Object.create(this.__proto__);
+        Object.assign(properties, Object.assign(Object.assign({}, this), { asRational: this.floatValue() }));
+        return properties;
     }
 }
 const fraction1 = new Fraction(2, 3);

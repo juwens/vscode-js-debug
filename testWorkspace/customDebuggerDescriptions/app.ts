@@ -41,6 +41,7 @@ class Fraction {
   }
 
   public customDebuggerProperties(): object {
+    throw new Error("Some error");
     const properties: object = Object.create((this as any).__proto__);
     Object.assign(properties, { ...this, asRational: this.floatValue() });
     return properties;
