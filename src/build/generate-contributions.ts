@@ -273,6 +273,11 @@ const baseConfigurationAttributes: ConfigurationAttributes<IBaseConfiguration> =
     default: undefined,
     description: refString('customDescriptionGenerator.description'),
   },
+  customPropertiesGenerator: {
+    type: 'string',
+    default: undefined,
+    description: refString('customPropertiesGenerator.description'),
+  },
   cascadeTerminateToConfigurations: {
     type: 'array',
     items: {

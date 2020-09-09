@@ -109,6 +109,7 @@ export class VariableStore {
     delegate: IVariableStoreDelegate,
     private readonly autoExpandGetters: boolean,
     private readonly customDescriptionGenerator: string | undefined,
+    private readonly customPropertiesGenerator: string | undefined,
   ) {
     this._cdp = cdp;
     this._delegate = delegate;
@@ -355,6 +356,41 @@ export class VariableStore {
     object: RemoteObject,
     objectId = object.objectId,
   ): Promise<Dap.Variable[]> {
+    const properties: (
+      | Promise<{ v: Dap.Variable; weight: number }[]>
+      | { v: Dap.Variable; weight: number }[]
+    )[] = [];
+
+    if (this.customPropertiesGenerator) {
+      const { result, errorDescription } = await this.evaluateCodeForObject(
+        object,
+        '',
+        this.customPropertiesGenerator,
+        [],
+      );
+
+      if (result && result.type !== 'undefined') {
+        object = new RemoteObject(object.name, object.cdp, result, object.parent);
+        objectId = object.objectId;
+      } else {
+        const value =
+          result?.description || errorDescription || localize('error.unknown', 'Unknown error');
+        properties.push([
+          {
+            v: {
+              name: localize(
+                'error.failedToCustomizeObjectProperties',
+                `Failed to customize object properties:`,
+              ),
+              value,
+              variablesReference: 0,
+            },
+            weight: 0,
+          },
+        ]);
+      }
+    }
+
     const [accessorsProperties, ownProperties] = await Promise.all([
       object.cdp.Runtime.getProperties({
         objectId,
@@ -382,11 +418,6 @@ export class VariableStore {
       if (property.symbol) propertySymbols.push(property);
       else propertiesMap.set(property.name, property);
     }
-
-    const properties: (
-      | Promise<{ v: Dap.Variable; weight: number }[]>
-      | { v: Dap.Variable; weight: number }[]
-    )[] = [];
 
     // Push own properties & accessors and symbols
     for (const propertiesCollection of [propertiesMap.values(), propertySymbols.values()]) {
@@ -614,43 +645,64 @@ export class VariableStore {
       return defaultValueDescription;
     }
 
-    let errorDescription;
+    const { result, errorDescription } = await this.evaluateCodeForObject(
+      object,
+      'defaultValue',
+      this.customDescriptionGenerator,
+      [defaultValueDescription],
+    );
+
+    return result?.value
+      ? '' + result.value
+      : localize(
+          'error.customValueDescriptionGeneratorFailed',
+          "{0} (couldn't describe: {1})",
+          defaultValueDescription,
+          errorDescription,
+        );
+  }
+
+  private async evaluateCodeForObject(
+    object: Cdp.Runtime.RemoteObject | RemoteObject,
+    parameterNames: string,
+    codeToEvaluate: string,
+    argumentsToEvaluateWith: string[],
+  ): Promise<{ result?: Cdp.Runtime.RemoteObject; errorDescription?: string }> {
     try {
       const customValueDescription = await this._cdp.Runtime.callFunctionOn({
         objectId: object.objectId,
         functionDeclaration: this.extractFunctionFromCustomDescriptionGenerator(
-          this.customDescriptionGenerator,
+          parameterNames,
+          codeToEvaluate,
         ),
-        arguments: [this._toCallArgument(defaultValueDescription)],
+        arguments: argumentsToEvaluateWith.map(arg => this._toCallArgument(arg)),
       });
-      if (customValueDescription?.exceptionDetails === undefined) {
-        return '' + customValueDescription?.result.value;
-      } else if (customValueDescription.result.description) {
-        errorDescription = customValueDescription.result.description.split('\n', 1)[0];
-      } else {
-        errorDescription = localize('error.unknown', 'Unknown error');
-      }
-    } catch (e) {
-      errorDescription = e.stack || e.message || String(e);
-    }
 
-    return localize(
-      'error.customValueDescriptionGeneratorFailed',
-      "{0} (couldn't describe: {1})",
-      defaultValueDescription,
-      errorDescription,
-    );
+      if (customValueDescription) {
+        if (customValueDescription.exceptionDetails === undefined) {
+          return { result: customValueDescription.result };
+        } else if (customValueDescription && customValueDescription.result.description) {
+          return { errorDescription: customValueDescription.result.description.split('\n', 1)[0] };
+        }
+      }
+      return { errorDescription: localize('error.unknown', 'Unknown error') };
+    } catch (e) {
+      return { errorDescription: e.stack || e.message || String(e) };
+    }
   }
 
-  private extractFunctionFromCustomDescriptionGenerator(generatorDefinition: string): string {
+  private extractFunctionFromCustomDescriptionGenerator(
+    parameterNames: string,
+    generatorDefinition: string,
+  ): string {
     const sourceFile = ts.createSourceFile(
-      'customDescriptionGenerator.js',
+      'dynamicallyGeneratedScript.js',
       generatorDefinition,
       ts.ScriptTarget.ESNext,
       true,
     );
 
-    const code = codeToFunctionReturningErrors('defaultValue', sourceFile.statements);
+    const code = codeToFunctionReturningErrors(parameterNames, sourceFile.statements);
     return code;
   }
 

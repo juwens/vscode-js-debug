@@ -238,6 +238,8 @@ const strings = {
       2. this.customDescription ? this.customDescription() : defaultValue // Use customDescription method if available, if not return defaultValue
       3. function (def) { return this.customDescription ? this.customDescription() : def } // Use customDescription method if available, if not return defaultValue
       `,
+  'customPropertiesGenerator.description':
+    'Customize the properties shown for an object in the debugger (local variables, etc...)',
 
   'longPredictionWarning.message':
     "It's taking a while to configure your breakpoints. You can speed this up by updating the 'outFiles' in your launch.json.",
