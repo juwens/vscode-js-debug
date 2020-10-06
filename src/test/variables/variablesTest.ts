@@ -140,7 +140,7 @@ describe('variables', () => {
       });
     });
 
-    describe.only('customDebuggerProperties', () => {
+    describe('customDebuggerProperties', () => {
       itIntegrates('works with customDebuggerProperties method ', async ({ r }) => {
         const p = await r.launchAndLoad('blank', {
           customPropertiesGenerator:

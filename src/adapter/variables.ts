@@ -2,9 +2,11 @@
  * Copyright (C) Microsoft Corporation. All rights reserved.
  *--------------------------------------------------------*/
 
+import ts from 'typescript';
 import * as nls from 'vscode-nls';
 import Cdp from '../cdp/api';
 import { flatten } from '../common/objUtils';
+import { statementsToFunction } from '../common/sourceCodeManipulations';
 import Dap from '../dap/api';
 import * as errors from '../dap/errors';
 import * as objectPreview from './objectPreview';
@@ -13,8 +15,6 @@ import { getSourceSuffix, RemoteException } from './templates';
 import { getArrayProperties } from './templates/getArrayProperties';
 import { getArraySlots } from './templates/getArraySlots';
 import { invokeGetter } from './templates/invokeGetter';
-import ts from 'typescript';
-import { codeToFunctionReturningErrors } from '../common/sourceCodeManipulations';
 
 const localize = nls.loadMessageBundle();
 
@@ -367,6 +367,7 @@ export class VariableStore {
         '',
         this.customPropertiesGenerator,
         [],
+        /*catchAndReturnErrors*/ false,
       );
 
       if (result && result.type !== 'undefined') {
@@ -380,7 +381,7 @@ export class VariableStore {
             v: {
               name: localize(
                 'error.failedToCustomizeObjectProperties',
-                `Failed to customize object properties:`,
+                `Failed properties customization`,
               ),
               value,
               variablesReference: 0,
@@ -650,6 +651,7 @@ export class VariableStore {
       'defaultValue',
       this.customDescriptionGenerator,
       [defaultValueDescription],
+      /*catchAndReturnErrors*/ true,
     );
 
     return result?.value
@@ -667,6 +669,7 @@ export class VariableStore {
     parameterNames: string,
     codeToEvaluate: string,
     argumentsToEvaluateWith: string[],
+    catchAndReturnErrors: boolean,
   ): Promise<{ result?: Cdp.Runtime.RemoteObject; errorDescription?: string }> {
     try {
       const customValueDescription = await this._cdp.Runtime.callFunctionOn({
@@ -674,6 +677,7 @@ export class VariableStore {
         functionDeclaration: this.extractFunctionFromCustomDescriptionGenerator(
           parameterNames,
           codeToEvaluate,
+          catchAndReturnErrors,
         ),
         arguments: argumentsToEvaluateWith.map(arg => this._toCallArgument(arg)),
       });
@@ -682,7 +686,7 @@ export class VariableStore {
         if (customValueDescription.exceptionDetails === undefined) {
           return { result: customValueDescription.result };
         } else if (customValueDescription && customValueDescription.result.description) {
-          return { errorDescription: customValueDescription.result.description.split('\n', 1)[0] };
+          return { errorDescription: customValueDescription.result.description };
         }
       }
       return { errorDescription: localize('error.unknown', 'Unknown error') };
@@ -694,6 +698,7 @@ export class VariableStore {
   private extractFunctionFromCustomDescriptionGenerator(
     parameterNames: string,
     generatorDefinition: string,
+    catchAndReturnErrors: boolean,
   ): string {
     const sourceFile = ts.createSourceFile(
       'dynamicallyGeneratedScript.js',
@@ -702,7 +707,7 @@ export class VariableStore {
       true,
     );
 
-    const code = codeToFunctionReturningErrors(parameterNames, sourceFile.statements);
+    const code = statementsToFunction(parameterNames, sourceFile.statements, catchAndReturnErrors);
     return code;
   }
 

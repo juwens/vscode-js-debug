@@ -1,46 +1,55 @@
 /*---------------------------------------------------------
  * Copyright (C) Microsoft Corporation. All rights reserved.
  *--------------------------------------------------------*/
-import { getSyntaxErrorIn } from './sourceUtils';
+import ts from 'typescript';
 import { invalidLogPointSyntax } from '../dap/errors';
 import { ProtocolError } from '../dap/protocolError';
-import ts from 'typescript';
+import { getSyntaxErrorIn } from './sourceUtils';
 
 /**
- * function (params) { code } => function (params) { catchAndReturnErrors(code) }
- * statement => function () { return catchAndReturnErrors(return statement) }
- * statement; statement => function () { catchAndReturnErrors(statement; return statement;) }
+ * function (params) { code } => function (params) { catchAndReturnErrors?(code) }
+ * statement => function () { return catchAndReturnErrors?(return statement) }
+ * statement; statement => function () { catchAndReturnErrors?(statement; return statement;) }
  * */
-export function codeToFunctionReturningErrors(
+export function statementsToFunction(
   parameterNames: string,
   statements: ReadonlyArray<ts.Statement>,
+  catchAndReturnErrors: boolean,
 ) {
   if (statements.length === 1 && statements[0].kind === ts.SyntaxKind.FunctionDeclaration) {
     const functionDeclarationCode = statements[0].getText();
     const callFunctionCode = `return (${functionDeclarationCode}).call(this, ${parameterNames});`;
-    return codeToFunctionExecutingCodeAndReturningErrors(parameterNames, callFunctionCode, true);
+    return codeToFunctionExecutingCode(
+      parameterNames,
+      callFunctionCode,
+      true,
+      catchAndReturnErrors,
+    );
   } else {
-    return statementToFunctionReturningErrors(parameterNames, statements, true);
+    return statementToFunction(parameterNames, statements, true, catchAndReturnErrors);
   }
 }
 
 /**
- * code => (parameterNames) => return catchAndReturnErrors(code)
+ * code => (parameterNames) => return catchAndReturnErrors?(code)
  * */
-function codeToFunctionExecutingCodeAndReturningErrors(
+function codeToFunctionExecutingCode(
   parameterNames: string,
   code: string,
   preserveThis: boolean,
+  catchAndReturnErrors: boolean,
 ): string {
   return (
     (preserveThis ? `function _generatedCode(${parameterNames}) ` : `(${parameterNames}) => `) +
-    `{
+    (catchAndReturnErrors
+      ? `{
   try {
 ${code}
   } catch (e) {
     return e.stack || e.message || String(e);
   }
 }`
+      : `{${code}}`)
   );
 }
 
@@ -62,7 +71,7 @@ export function returnErrorsFromStatements(
 ) {
   return functionToFunctionCall(
     parameterNames,
-    statementToFunctionReturningErrors(parameterNames, statements, preserveThis),
+    statementToFunction(parameterNames, statements, preserveThis, /*catchAndReturnErrors*/ true),
   );
 }
 
@@ -70,10 +79,11 @@ export function returnErrorsFromStatements(
  * statement => function () { catchAndReturnErrors(return statement); }
  * statement; statement => function () { catchAndReturnErrors(statement; return statement); }
  * */
-export function statementToFunctionReturningErrors(
+export function statementToFunction(
   parameterNames: string,
   statements: ReadonlyArray<ts.Statement>,
   preserveThis: boolean,
+  catchAndReturnErrors: boolean,
 ) {
   const output = [];
 
@@ -94,10 +104,11 @@ export function statementToFunctionReturningErrors(
     output.push(`    ${stmt}`);
   }
 
-  const result = codeToFunctionExecutingCodeAndReturningErrors(
+  const result = codeToFunctionExecutingCode(
     parameterNames,
     output.join('\n'),
     preserveThis,
+    catchAndReturnErrors,
   );
   const error = getSyntaxErrorIn(result);
   if (error) {
